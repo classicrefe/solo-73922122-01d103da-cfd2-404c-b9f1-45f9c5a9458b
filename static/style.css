@@ -68,3 +68,14 @@ dl.grid { display: grid; grid-template-columns: 260px 1fr; gap: 6px 14px; margin
 dl.grid dt { color: #666; }
 dl.grid dd { margin: 0; }
 .hint { color: #777; font-size: 13px; }
+code { background: #f0f3f7; padding: 1px 5px; border-radius: 4px; }
+.draft { border: 1px solid #d9dee6; border-radius: 7px; padding: 12px 14px; margin: 14px 0; }
+.draft-head { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; margin-bottom: 8px; }
+.count-pending { color: #9c1f1f; font-weight: 700; }
+a.download { margin-left: auto; color: #1f3a5f; font-size: 14px; font-weight: 600; }
+a.download:hover { color: #2a4f80; }
+button.demo { background: #5a6f8e; }
+button.demo:hover { background: #6d84a4; }
+.rekey-form textarea { max-width: 720px; }
+details { margin-top: 8px; }
+details summary { cursor: pointer; }

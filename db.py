@@ -50,6 +50,29 @@ CREATE TABLE IF NOT EXISTS checkpoint_judgments (
     judged_at TEXT NOT NULL,
     UNIQUE (batch_id, checkpoint_idx)
 );
+
+-- 结批后的重录稿: 纸档重录后拆成几份入仓, 每份为一稿
+CREATE TABLE IF NOT EXISTS rekey_drafts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id INTEGER NOT NULL REFERENCES batches(id),
+    draft_no TEXT NOT NULL,                -- 稿号(批内唯一)
+    version INTEGER NOT NULL DEFAULT 1,    -- 整份替换次数
+    row_count INTEGER NOT NULL,            -- 稿内行数
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (batch_id, draft_no)
+);
+
+CREATE TABLE IF NOT EXISTS rekey_rows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    draft_id INTEGER NOT NULL REFERENCES rekey_drafts(id) ON DELETE CASCADE,
+    batch_id INTEGER NOT NULL REFERENCES batches(id),
+    line_no INTEGER NOT NULL,              -- CSV 行序(不含表头), 便于审计
+    new_entry_no TEXT NOT NULL,            -- 新条目号(稿内唯一)
+    nameplate_no TEXT NOT NULL,            -- 铭牌编号(逐字比对)
+    original_entry_no TEXT,                -- 原条目号, 可留空
+    UNIQUE (draft_id, new_entry_no)
+);
 """
 
 

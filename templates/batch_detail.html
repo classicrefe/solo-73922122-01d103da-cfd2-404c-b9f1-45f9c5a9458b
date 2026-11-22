@@ -27,7 +27,87 @@
     <dt>通过阈值</dt><dd>{{ '%.6g' | format(batch.conclusion_threshold) }}</dd>
     <dt>封存时间(UTC)</dt><dd>{{ batch.concluded_at }}</dd>
   </dl>
-  <p class="hint">批次已结批, 停止录入。</p>
+  <p class="hint">批次已结批, 停止录入。可进行重录核对: 按稿号上传或整份替换重录稿。</p>
+</section>
+
+<section class="panel" id="rekey">
+  <h2>重录核对(纸档重录入仓)</h2>
+  <p class="hint">
+    CSV 三列: <code>新条目号,铭牌编号,原条目号</code>(可带表头)。新条目号稿内唯一; 原条目号可留空。
+    同稿号再次上传即<strong>整份替换</strong>。仅当「原条目核对为正确 + 铭牌编号逐字相同 +
+    该原条目号在本批所有现行稿中只被引用一次」时沿用旧核对, 其余行进入该稿待复核清单并注明原因。
+    任一稿增删或替换后, 全部现行稿按现状重新判定; 换稿失败时各稿及清单保持原状。
+  </p>
+  <form method="post" enctype="multipart/form-data"
+        action="{{ url_for('upload_rekey_draft_html', batch_no=batch.batch_no) }}" class="rekey-form">
+    <label>稿号
+      <input name="draft_no" id="draft_no" required maxlength="64" placeholder="如 G1">
+    </label>
+    <label>重录稿内容(每行: 新条目号,铭牌编号,原条目号)
+      <textarea name="draft_text" id="draft_text" rows="8"
+                placeholder="新条目号,铭牌编号,原条目号&#10;R-001,NP-88001,E001&#10;R-002,NP-88099,"></textarea>
+    </label>
+    <label>或上传 CSV 文件(UTF-8; 选择文件后优先于文本框)
+      <input type="file" name="draft_file" accept=".csv,.txt">
+    </label>
+    <div class="actions">
+      <button type="submit">上传 / 整份替换</button>
+      <button type="button" class="demo" onclick="demoDraft('G1')">填入演示稿 G1</button>
+      <button type="button" class="demo" onclick="demoDraft('G2')">填入演示稿 G2(与 G1 重复引用)</button>
+      <button type="button" class="demo" onclick="demoDraft('G2R')">生成 G2 替换稿(去掉重复引用)</button>
+    </div>
+  </form>
+
+  <h3>各稿待复核清单</h3>
+  {% if not rekey_drafts %}
+  <p class="hint">尚无重录稿。</p>
+  {% endif %}
+  {% for d in rekey_drafts %}
+  <div class="draft" id="draft-{{ d.draft_no }}">
+    <div class="draft-head">
+      <strong>稿号 {{ d.draft_no }}</strong>
+      <span class="hint">第 {{ d.version }} 版 · 共 {{ d.row_count }} 行 ·
+        待复核 <span class="count-pending">{{ d.pending_count }}</span> 行 ·
+        沿用旧核对 {{ d.inherited_count }} 行 · 更新于 {{ d.updated_at }}</span>
+      <a class="download" href="{{ url_for('download_rekey_pending_html',
+             batch_no=batch.batch_no, draft_no=d.draft_no, token=d.token) }}">下载待复核清单 CSV</a>
+    </div>
+    {% if d.pending %}
+    <table>
+      <thead>
+        <tr><th>行序</th><th>新条目号</th><th>铭牌编号</th><th>原条目号</th><th>待复核原因</th></tr>
+      </thead>
+      <tbody>
+        {% for p in d.pending %}
+        <tr>
+          <td>{{ p.line_no }}</td>
+          <td>{{ p.new_entry_no }}</td>
+          <td>{{ p.nameplate_no }}</td>
+          <td>{{ p.original_entry_no or '(留空)' }}</td>
+          <td>{{ p.reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="hint">本稿无待复核行, 全部可沿用旧核对。</p>
+    {% endif %}
+    {% if d.inherited %}
+    <details>
+      <summary class="hint">沿用旧核对的 {{ d.inherited_count }} 行(点击展开)</summary>
+      <table>
+        <thead><tr><th>行序</th><th>新条目号</th><th>铭牌编号</th><th>原条目号</th></tr></thead>
+        <tbody>
+          {% for r in d.inherited %}
+          <tr><td>{{ r.line_no }}</td><td>{{ r.new_entry_no }}</td>
+              <td>{{ r.nameplate_no }}</td><td>{{ r.original_entry_no }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
+  </div>
+  {% endfor %}
 </section>
 {% endif %}
 
@@ -117,6 +197,44 @@ async function demoFill(result) {
     if (!resp.ok) break;  // 如中途结批则停止
   }
   location.reload();
+}
+</script>
+{% endif %}
+
+{% if batch.status != 'open' %}
+<script>
+const REKEY_BATCH = {{ batch.batch_no | tojson }};
+const REKEY_HEADER = '新条目号,铭牌编号,原条目号';
+function setDraft(no, lines) {
+  document.getElementById('draft_no').value = no;
+  document.getElementById('draft_text').value = [REKEY_HEADER].concat(lines).join('\n');
+  document.getElementById('rekey').scrollIntoView();
+}
+async function demoDraft(kind) {
+  const resp = await fetch(`/api/batches/${encodeURIComponent(REKEY_BATCH)}`);
+  const data = await resp.json();
+  const sample = data.sample;
+  const okItem = sample.find(it => it.result === 'ok') || sample[0];
+  const anyItem = sample[1] || sample[0];
+  if (kind === 'G1') {
+    // 覆盖: 可沿用 / 铭牌不同 / 原条目留空 / 原条目不存在 四类
+    setDraft('G1', [
+      `R1-001,${okItem.nameplate_no},${okItem.entry_no}`,
+      `R1-002,NP-DEMO-DIFFERENT,${okItem.entry_no}`,
+      'R1-003,NP-DEMO-BLANK,',
+      'R1-004,NP-DEMO-NOORIG,NO-SUCH-ENTRY'
+    ]);
+  } else if (kind === 'G2') {
+    // 与 G1 重复引用同一原条目 -> 两稿该引用都不再唯一, 均进入待复核
+    setDraft('G2', [
+      `R2-001,${okItem.nameplate_no},${okItem.entry_no}`,
+      `R2-002,${anyItem.nameplate_no},${anyItem.entry_no}`
+    ]);
+  } else {  // G2R: 整份替换, 去掉重复引用 -> G1 恢复唯一、恢复沿用
+    setDraft('G2', [
+      `R2-001,${anyItem.nameplate_no},${anyItem.entry_no}`
+    ]);
+  }
 }
 </script>
 {% endif %}
